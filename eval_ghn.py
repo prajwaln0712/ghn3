@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 """
-Evaluates a GHN on one or all PyTorch models on ImageNet. Testing 20012001
+Evaluates a GHN on one or all PyTorch models on ImageNet. Trying one last time
 This script assumes the ImageNet dataset is already downloaded and set up as described in scripts/imagenet_setup.sh.
 
 Example
