@@ -5,10 +5,10 @@
 # LICENSE file in the root directory of this source tree.
 
 """
-Evaluates a trained PyTorch model on ImageNet. One more change for testing
+Evaluates a trained PyTorch model on ImageNet.
 This script assumes the ImageNet dataset is already downloaded and set up as described in scripts/imagenet_setup.sh.
 
-Example: Here too
+Example:
 
     python eval.py -d imagenet -D $SLURM_TMPDIR --arch resnet50 --ckpt ./checkpoints/resnet50/checkpoint.pt
 
