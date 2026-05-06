@@ -2,7 +2,7 @@
 <project version="4">
   <component name="SshConfigs">
     <configs>
-      <sshConfig authType="PASSWORD" host="sporcsubmit.rc.rit.edu" id="42e185c7-8a03-409a-a43a-27317b4e1c3e" port="22" nameFormat="DESCRIPTIVE" username="pn2694" useOpenSSHConfig="true" />
+      <sshConfig authType="PASSWORD" connectionConfig="{&quot;serverAliveInterval&quot;:300}" host="sporcsubmit.rc.rit.edu" id="42e185c7-8a03-409a-a43a-27317b4e1c3e" port="22" nameFormat="DESCRIPTIVE" username="pn2694" useOpenSSHConfig="true" />
     </configs>
   </component>
 </project>
