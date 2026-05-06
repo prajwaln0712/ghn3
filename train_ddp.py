@@ -53,6 +53,10 @@ from ppuda.config import init_config
 from ppuda.utils import capacity
 from ppuda.vision.loader import image_loader
 from ghn3 import log, Trainer, setup_ddp, transforms_imagenet, clean_ddp
+import  torch.nn as nn
+from medmnist_loader import medmnist_loader, DATASET_REGISTRY as Med_Registry
+from evaluate_medmnist import evaluate_model, format_metrics
+from medmnist import Evaluator
 
 log = partial(log, flush=True)
 
@@ -69,18 +73,37 @@ def main():
     args = init_config(mode='train_net', parser=parser, verbose=ddp.rank == 0, debug=0, beta=1e-5)
     # beta is the amount of noise added to params (if GHN is used for init, otherwise ignored), default: 1e-5
 
+    is_medmnist = args.dataset.lower() in Med_Registry
+
     log('loading the %s dataset...' % args.dataset.upper())
-    train_queue = image_loader(args.dataset,
-                               args.data_dir,
-                               test=not args.val,
-                               load_train_anyway=True,
-                               batch_size=args.batch_size,
-                               num_workers=args.num_workers,
-                               seed=args.seed,
-                               ddp=ddp.ddp,
-                               im_size=args.imsize,
-                               transforms_train_val=transforms_imagenet(im_size=args.imsize, timm_aug=args.timm_aug),
-                               verbose=ddp.rank == 0)[0]
+    if is_medmnist:
+        train_queue, val_queue, n_classes = medmnist_loader(args.dataset,
+                                   args.data_dir,
+                                   test=not args.val,
+                                   load_train_anyway=True,
+                                   batch_size=args.batch_size,
+                                   num_workers=args.num_workers,
+                                   seed=args.seed,
+                                   ddp=ddp.ddp,
+                                   im_size=args.imsize,
+                                   transforms_train_val=transforms_imagenet(im_size=args.imsize,timm_aug=args.timm_aug),
+                                   verbose=ddp.rank == 0)
+    else:
+        train_queue, val_queue, n_classes = image_loader(args.dataset,
+                                   args.data_dir,
+                                   test=not args.val,
+                                   load_train_anyway=True,
+                                   batch_size=args.batch_size,
+                                   num_workers=args.num_workers,
+                                   seed=args.seed,
+                                   ddp=ddp.ddp,
+                                   im_size=args.imsize,
+                                   transforms_train_val=transforms_imagenet(im_size=args.imsize, timm_aug=args.timm_aug),
+                                   verbose=ddp.rank == 0)
+    medmnist_evaluator = None
+    if is_medmnist:
+        eval_split = 'test' if not args.val else 'val'
+        medmnist_evaluator = Evaluator(args.dataset.lower(), eval_split, size=args.imsize, root=args.data_dir)
 
     trainer = Trainer(eval(f'torchvision.models.{args.arch}()'),
                       opt=args.opt,
@@ -102,6 +125,20 @@ def main():
                       compile_mode=args.compile,          # pytorch2.0 compilation for potential speedup (default: None)
                       beta=args.beta,
                       )
+    if is_medmnist:
+        inner = trainer._model.module if hasattr(trainer._model, 'module') else trainer._model
+        old_out = inner.fc.out_features
+        inner.fc = nn.Linear(inner.fc.in_features, n_classes).to(args.device)
+        log(f'swapped head: {old_out} outputs -> {n_classes} outputs for {args.dataset}')
+
+        trainer._reset(
+            opt=args.opt,
+            opt_args={'lr': args.lr, 'weight_decay': args.wd, 'momentum': args.momentum},
+            scheduler='mstep' if args.scheduler is None else args.scheduler,
+            scheduler_args={'milestones': args.lr_steps, 'gamma': args.gamma},
+            state_dict=None,
+        )
+        log('rebuilt optimizer to include the new head parameters')
 
     log('\nStarting training {} with {} parameters!'.format(args.arch.upper(), capacity(trainer._model)[1]))
 
@@ -131,7 +168,35 @@ def main():
 
         trainer.scheduler_step()  # lr scheduler step
 
+        # End-of-epoch evaluation. Only rank 0 runs this in DDP mode to avoid duplicate work across processes.
+        if ddp.rank == 0:
+            inner = trainer._model.module if hasattr(trainer._model, 'module') else trainer._model
+            eval_metrics = evaluate_model(
+                model=inner,
+                loader=val_queue,
+                device=args.device,
+                n_classes=n_classes,
+                medmnist_evaluator=medmnist_evaluator,
+            )
+            log(format_metrics(eval_metrics, prefix=f'[eval epoch {epoch + 1:03d}] '))
+
     log('done at {}!'.format(time.strftime('%Y%m%d-%H%M%S')))
+
+    # Final evaluation, logged distinctly so it's easy to find in stdout.
+    if ddp.rank == 0:
+        inner = trainer._model.module if hasattr(trainer._model, 'module') else trainer._model
+        final_metrics = evaluate_model(
+            model=inner,
+            loader=val_queue,
+            device=args.device,
+            n_classes=n_classes,
+            medmnist_evaluator=medmnist_evaluator,
+        )
+        log('\n=== FINAL EVALUATION ===')
+        log(format_metrics(final_metrics, prefix='[final] '))
+        log(f'per-class F1: {final_metrics["per_class_f1"]}')
+        log(f'confusion matrix:\n{final_metrics["confusion_matrix"]}')
+
     if ddp.ddp:
         clean_ddp()
 
