@@ -192,7 +192,7 @@ def main():
             n_classes=n_classes,
             medmnist_evaluator=medmnist_evaluator,
         )
-        log('\n=== FINAL EVALUATION ===')
+        log('\n-----FINAL EVALUATION-----')
         log(format_metrics(final_metrics, prefix='[final] '))
         log(f'per-class F1: {final_metrics["per_class_f1"]}')
         log(f'confusion matrix:\n{final_metrics["confusion_matrix"]}')

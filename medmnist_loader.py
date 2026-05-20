@@ -202,11 +202,7 @@ def medmnist_loader(dataset='dermamnist',
     return train_loader, valid_loader, n_classes
 
 
-# -------------------------------------------------------------------------
-# Smoke test: run `python medmnist_loader.py` to verify the loader works.
-# It downloads DermaMNIST (size=224), builds the loaders, and pulls one batch
-# to check shapes. No GHN-3 or training is involved.
-# -------------------------------------------------------------------------
+#Smoke test to check if medmnist_loader is working properly. This will download DermaMNIST.
 if __name__ == '__main__':
     print("Smoke testing medmnist_loader on DermaMNIST (size=224)...")
 
