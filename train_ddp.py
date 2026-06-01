@@ -57,6 +57,7 @@ import  torch.nn as nn
 from medmnist_loader import medmnist_loader, DATASET_REGISTRY as Med_Registry
 from evaluate_medmnist import evaluate_model, format_metrics
 from medmnist import Evaluator
+from caltech_loader import caltech_loader, DATASET_REGISTRY as Cal_Registry
 
 log = partial(log, flush=True)
 
@@ -74,10 +75,24 @@ def main():
     # beta is the amount of noise added to params (if GHN is used for init, otherwise ignored), default: 1e-5
 
     is_medmnist = args.dataset.lower() in Med_Registry
+    is_cal = args.dataset.lower() in Cal_Registry
+    head_swap = is_medmnist or is_cal
 
     log('loading the %s dataset...' % args.dataset.upper())
     if is_medmnist:
         train_queue, val_queue, n_classes = medmnist_loader(args.dataset,
+                                   args.data_dir,
+                                   test=not args.val,
+                                   load_train_anyway=True,
+                                   batch_size=args.batch_size,
+                                   num_workers=args.num_workers,
+                                   seed=args.seed,
+                                   ddp=ddp.ddp,
+                                   im_size=args.imsize,
+                                   transforms_train_val=transforms_imagenet(im_size=args.imsize,timm_aug=args.timm_aug),
+                                   verbose=ddp.rank == 0)
+    elif is_cal:
+        train_queue, val_queue, n_classes = caltech_loader(args.dataset,
                                    args.data_dir,
                                    test=not args.val,
                                    load_train_anyway=True,
@@ -100,10 +115,10 @@ def main():
                                    im_size=args.imsize,
                                    transforms_train_val=transforms_imagenet(im_size=args.imsize, timm_aug=args.timm_aug),
                                    verbose=ddp.rank == 0)
-    medmnist_evaluator = None
-    if is_medmnist:
-        eval_split = 'test' if not args.val else 'val'
-        medmnist_evaluator = Evaluator(args.dataset.lower(), eval_split, size=args.imsize, root=args.data_dir)
+    # medmnist_evaluator = None
+    # if is_medmnist:
+    #     eval_split = 'test' if not args.val else 'val'
+    #     medmnist_evaluator = Evaluator(args.dataset.lower(), eval_split, size=args.imsize, root=args.data_dir)
 
     trainer = Trainer(eval(f'torchvision.models.{args.arch}()'),
                       opt=args.opt,
@@ -125,7 +140,7 @@ def main():
                       compile_mode=args.compile,          # pytorch2.0 compilation for potential speedup (default: None)
                       beta=args.beta,
                       )
-    if is_medmnist:
+    if head_swap:
         inner = trainer._model.module if hasattr(trainer._model, 'module') else trainer._model
         old_out = inner.fc.out_features
         inner.fc = nn.Linear(inner.fc.in_features, n_classes).to(args.device)
@@ -176,7 +191,6 @@ def main():
                 loader=val_queue,
                 device=args.device,
                 n_classes=n_classes,
-                medmnist_evaluator=medmnist_evaluator,
             )
             log(format_metrics(eval_metrics, prefix=f'[eval epoch {epoch + 1:03d}] '))
 
@@ -190,7 +204,6 @@ def main():
             loader=val_queue,
             device=args.device,
             n_classes=n_classes,
-            medmnist_evaluator=medmnist_evaluator,
         )
         log('\n-----FINAL EVALUATION-----')
         log(format_metrics(final_metrics, prefix='[final] '))

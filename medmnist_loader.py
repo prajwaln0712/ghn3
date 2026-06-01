@@ -226,5 +226,5 @@ if __name__ == '__main__':
     print("  images.shape:", images.shape, " dtype:", images.dtype)
     print("  labels.shape:", labels.shape, " dtype:", labels.dtype)
     print("  unique labels in batch:", labels.unique().tolist())
-
+    
     print("\nSUCCESS: medmnist_loader is working.")
